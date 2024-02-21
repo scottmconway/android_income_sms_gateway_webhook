@@ -20,7 +20,10 @@ import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.WorkRequest;
 
+import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -73,27 +76,21 @@ public class SmsReceiver extends BroadcastReceiver {
             senderName = senderPhoneNumber;     // fallback to phone number
         }
 
-        ForwardingConfig matchedConfig = null;
         for (ForwardingConfig config : configs) {
+            ForwardingConfig matchedConfig = config;
             if (senderPhoneNumber.equals(config.getSender()) || config.getSender().equals(asterisk)) {
-                matchedConfig = config;
-                break;
-            }
-        }
 
-        if (matchedConfig == null) {
-            return;
-        }
+                // Use org.json.JSONObject.quote to properly escape the message string
+                // then remove the quotes it prepends/appends to the string
+                String escapedMessageText = JSONObject.quote(content.toString());
+                escapedMessageText = escapedMessageText.substring(1, escapedMessageText.length() - 1);
 
-        // Use org.json.JSONObject.quote to properly escape the message string
-        // then remove the quotes it prepends/appends to the string
-        String escapedMessageText = JSONObject.quote(content.toString());
-        escapedMessageText = escapedMessageText.substring(1, escapedMessageText.length() - 1);
-
-        String messageContent = matchedConfig.getTemplate()
+                String messageContent = matchedConfig.getTemplate()
                 .replaceAll("%from%", senderPhoneNumber)
                 .replaceAll("%sentStamp%", String.valueOf(messages[0].getTimestampMillis()))
+                .replaceAll("%sentStampFmt%", getFormattedDateTime(messages[0].getTimestampMillis()))
                 .replaceAll("%receivedStamp%", String.valueOf(System.currentTimeMillis()))
+                .replaceAll("%receivedStampFmt%", getFormattedDateTime(System.currentTimeMillis()))
                 .replaceAll("%sim%", this.detectSim(bundle))
                 // TODO since both `fromName` and `text` can contain arbitrary characters,
                 // the latter replacement can overwrite text in the former
@@ -103,12 +100,14 @@ public class SmsReceiver extends BroadcastReceiver {
                         Matcher.quoteReplacement(StringEscapeUtils.escapeJson(senderName.toString())))
                 .replaceAll("%text%",
                         Matcher.quoteReplacement(StringEscapeUtils.escapeJson(content.toString())));
-        this.callWebHook(
-                matchedConfig.getUrl(),
-                messageContent,
-                matchedConfig.getHeaders(),
-                matchedConfig.getIgnoreSsl()
-        );
+                this.callWebHook(
+                        matchedConfig.getUrl(),
+                        messageContent,
+                        matchedConfig.getHeaders(),
+                        matchedConfig.getIgnoreSsl()
+                );
+            }
+        }
     }
 
     protected void callWebHook(String url, String message, String headers, boolean ignoreSsl) {
@@ -211,5 +210,10 @@ public class SmsReceiver extends BroadcastReceiver {
         }
 
         return contactName;
+    }
+
+    private String getFormattedDateTime(long millis) {
+        DateFormat dateTimeFormat = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM, Locale.getDefault());
+        return dateTimeFormat.format(new Date(millis));
     }
 }

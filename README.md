@@ -15,6 +15,8 @@ This application provides a simple interface to send HTTP requests with informat
 HTTP method: POST  
 Content-type: application/json; charset=utf-8  
 
+If HTTP Basic Auth credentials are present in the URL, an `Authorization` header will be composed automatically. If an explicit `Authorization` header value is supplied as well, the header value will override the credentials in the URL.
+
 Sample configuration for ntfy:  
 
 <table>

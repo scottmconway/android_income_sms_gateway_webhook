@@ -1,6 +1,7 @@
 package org.scottmconway.incomingsmsgateway;
 
 import android.annotation.SuppressLint;
+import android.util.Base64;
 import android.util.Log;
 
 import org.apache.http.conn.ssl.AllowAllHostnameVerifier;
@@ -59,6 +60,13 @@ public class Request {
         }
 
         this.connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+        // auto-generate HTTP Basic Authorization header
+        // this can be overriden by an Authorization header in the user's config
+        if (url.getUserInfo() != null) {
+            String basicAuth = "Basic " + Base64.encodeToString(url.getUserInfo().getBytes(), 0);
+            this.connection.setRequestProperty("Authorization", basicAuth);
+        }
     }
 
     public void setJsonHeaders(String headers) {

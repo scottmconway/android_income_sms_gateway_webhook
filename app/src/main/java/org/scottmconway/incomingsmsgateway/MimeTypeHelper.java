@@ -9,7 +9,7 @@ public class MimeTypeHelper {
             return "";
         }
         String ext = MimeTypeMap.getSingleton()
-                .getExtensionFromMimeType(mimeType.toLowerCase());
+                .getExtensionFromMimeType(mimeType.toLowerCase(java.util.Locale.ROOT));
         if (ext != null) {
             return "." + ext;
         }

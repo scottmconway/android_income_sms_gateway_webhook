@@ -82,9 +82,9 @@ public class MmsBroadcastReceiver extends ContentObserver {
         try {
             while (cursor.moveToNext()) {
                 long mmsId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
-                int msgBox = cursor.getInt(cursor.getColumnIndex("msg_box"));
-                String subject = cursor.getString(cursor.getColumnIndex("sub"));
-                long date = cursor.getLong(cursor.getColumnIndex("date")) * 1000;
+                int msgBox = cursor.getInt(cursor.getColumnIndexOrThrow("msg_box"));
+                String subject = cursor.getString(cursor.getColumnIndexOrThrow("sub"));
+                long date = cursor.getLong(cursor.getColumnIndexOrThrow("date")) * 1000;
 
                 lastMmsId = mmsId;
 
@@ -279,8 +279,9 @@ public class MmsBroadcastReceiver extends ContentObserver {
             while (cursor.moveToNext()) {
                 MmsPart part = new MmsPart();
                 part.id = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
-                part.contentType = cursor.getString(cursor.getColumnIndex("ct"));
-                part.text = cursor.getString(cursor.getColumnIndex("text"));
+                part.contentType = cursor.getString(cursor.getColumnIndexOrThrow("ct"));
+                int textCol = cursor.getColumnIndex("text");
+                part.text = textCol >= 0 ? cursor.getString(textCol) : null;
 
                 if (part.contentType != null && !part.contentType.equals("text/plain")) {
                     part.data = readPartData(part.id);

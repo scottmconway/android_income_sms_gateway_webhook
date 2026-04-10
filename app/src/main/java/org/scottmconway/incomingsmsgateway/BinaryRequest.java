@@ -1,0 +1,164 @@
+package org.scottmconway.incomingsmsgateway;
+
+import android.annotation.SuppressLint;
+import android.util.Base64;
+import android.util.Log;
+
+import org.apache.http.conn.ssl.AllowAllHostnameVerifier;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.util.Iterator;
+
+import javax.net.ssl.HttpsURLConnection;
+
+import org.scottmconway.incomingsmsgateway.SSLSocketFactory.TLSSocketFactory;
+
+/**
+ * Sends raw binary data as the HTTP request body.
+ * Used for MMS attachment uploads (e.g. to ntfy).
+ */
+public class BinaryRequest {
+
+    private final byte[] data;
+    private final String contentType;
+    private boolean ignoreSsl = false;
+    private String error = null;
+    private HttpURLConnection connection;
+
+    public static final String RESULT_SUCCESS = "success";
+    public static final String RESULT_ERROR = "error";
+    public static final String RESULT_RETRY = "error_retry";
+
+    public BinaryRequest(String urlString, String method, byte[] data, String contentType) {
+        this.data = data;
+        this.contentType = contentType;
+
+        URL url;
+        try {
+            url = new URL(urlString);
+        } catch (MalformedURLException e) {
+            Log.e("SmsGateway", "malformed url error: " + urlString);
+            this.error = RESULT_ERROR;
+            return;
+        }
+
+        try {
+            this.connection = (HttpURLConnection) url.openConnection();
+            this.connection.setRequestMethod(method);
+        } catch (IOException e) {
+            Log.e("SmsGateway", "open connection error: " + e);
+            this.error = RESULT_ERROR;
+            return;
+        }
+
+        // Don't set Content-Type — let the user's configured headers control it.
+        // ntfy and similar services expect application/octet-stream (the default)
+        // rather than the attachment's MIME type.
+
+        if (url.getUserInfo() != null) {
+            String basicAuth = "Basic " + Base64.encodeToString(url.getUserInfo().getBytes(), 0);
+            this.connection.setRequestProperty("Authorization", basicAuth);
+        }
+    }
+
+    public void setJsonHeaders(String headers) {
+        JSONObject headersObj;
+        try {
+            headersObj = new JSONObject(headers);
+            Iterator<String> keys = headersObj.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (headersObj.get(key) instanceof JSONObject) {
+                    Log.e("SmsGateway", "only string supported in json");
+                    continue;
+                }
+                this.connection.setRequestProperty(key, (String) headersObj.get(key));
+            }
+        } catch (JSONException e) {
+            Log.e("SmsGateway", "headers error: " + e);
+            this.error = RESULT_ERROR;
+        }
+    }
+
+    public void setIgnoreSsl(boolean ignoreSsl) {
+        this.ignoreSsl = ignoreSsl;
+    }
+
+    @SuppressLint({"AllowAllHostnameVerifier"})
+    public String execute() {
+        if (this.error != null) {
+            return this.error;
+        }
+
+        String result = RESULT_SUCCESS;
+
+        try {
+            if (this.connection instanceof HttpsURLConnection) {
+                ((HttpsURLConnection) this.connection).setSSLSocketFactory(
+                        new TLSSocketFactory(this.ignoreSsl)
+                );
+                if (this.ignoreSsl) {
+                    ((HttpsURLConnection) this.connection).setHostnameVerifier(new AllowAllHostnameVerifier());
+                }
+            }
+
+            this.connection.setDoOutput(true);
+            this.connection.setFixedLengthStreamingMode(this.data.length);
+
+            OutputStream out = new BufferedOutputStream(this.connection.getOutputStream());
+            out.write(this.data);
+            out.flush();
+            out.close();
+
+            int responseCode = this.connection.getResponseCode();
+            if (responseCode / 100 != 2) {
+                String responseBody = "";
+                try {
+                    java.io.InputStream errStream = this.connection.getErrorStream();
+                    if (errStream != null) {
+                        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            sb.append(line).append("\n");
+                        }
+                        reader.close();
+                        responseBody = sb.toString();
+                    }
+                } catch (IOException ignored) {}
+                Log.e("SmsGateway", "binary upload failed: HTTP " + responseCode
+                        + " url=" + this.connection.getURL()
+                        + " method=" + this.connection.getRequestMethod()
+                        + " contentType=" + this.contentType
+                        + " dataLen=" + this.data.length
+                        + " response: " + responseBody);
+                result = RESULT_RETRY;
+            }
+        } catch (NoSuchAlgorithmException e) {
+            Log.e("SmsGateway", "ssl algorithm error: " + e);
+            result = RESULT_ERROR;
+        } catch (KeyManagementException e) {
+            Log.e("SmsGateway", "ssl factory error: " + e);
+            result = RESULT_ERROR;
+        } catch (IOException e) {
+            Log.e("SmsGateway", "io error " + e);
+            result = RESULT_RETRY;
+        } finally {
+            if (this.connection != null) {
+                this.connection.disconnect();
+            }
+        }
+
+        return result;
+    }
+}

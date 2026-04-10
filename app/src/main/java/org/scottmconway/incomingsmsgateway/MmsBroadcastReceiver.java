@@ -24,6 +24,7 @@ public class MmsBroadcastReceiver extends ContentObserver {
     private static final String TAG = "MmsBroadcastReceiver";
     private static final Uri MMS_CONTENT_URI = Uri.parse("content://mms");
     private static final int MMS_ADDR_TYPE_FROM = 137;
+    private static final int MMS_ADDR_TYPE_TO = 151;
     private static final int MAX_READ_RETRIES = 3;
     private static final long[] RETRY_DELAYS_MS = {2000, 4000, 8000};
 
@@ -137,7 +138,7 @@ public class MmsBroadcastReceiver extends ContentObserver {
             ArrayList<MmsPart> attachments = new ArrayList<>();
             for (MmsPart part : parts) {
                 Log.d(TAG, "MMS " + mmsId + " part ct=" + part.contentType + " textLen=" + (part.text != null ? part.text.length() : 0) + " dataLen=" + (part.data != null ? part.data.length : 0));
-                if (part.contentType != null && part.contentType.startsWith("text/")) {
+                if (part.contentType != null && part.contentType.equals("text/plain")) {
                     if (part.text != null) {
                         textContent.append(part.text);
                     }
@@ -147,19 +148,21 @@ public class MmsBroadcastReceiver extends ContentObserver {
             }
 
             String senderName = getContactNameByPhoneNumber(sender, context);
+            ArrayList<String> recipients = getMmsRecipients(mmsId);
+            String displayName = formatGroupName(sender, senderName, recipients);
             String text = textContent.toString();
-            Log.d(TAG, "MMS " + mmsId + " text=" + text.length() + "chars, attachments=" + attachments.size());
+            Log.d(TAG, "MMS " + mmsId + " text=" + text.length() + "chars, attachments=" + attachments.size() + " recipients=" + recipients.size() + " displayName=" + displayName);
 
             if (attachments.isEmpty()) {
                 WebhookMessage message = new WebhookMessage(
-                        "Incoming MMS", sender, senderName, 0, "undetected",
+                        "Incoming MMS", sender, displayName, 0, "undetected",
                         text, date, subject, "", "", null);
                 dispatchToWebhooks(message);
             } else {
                 for (MmsPart attachment : attachments) {
                     String b64Data = Base64.encodeToString(attachment.data, Base64.NO_WRAP);
                     WebhookMessage message = new WebhookMessage(
-                            "Incoming MMS", sender, senderName, 0, "undetected",
+                            "Incoming MMS", sender, displayName, 0, "undetected",
                             text, date, subject, b64Data, attachment.contentType, attachment.data);
                     dispatchToWebhooks(message);
                 }
@@ -219,6 +222,64 @@ public class MmsBroadcastReceiver extends ContentObserver {
         return null;
     }
 
+    private ArrayList<String> getMmsRecipients(long mmsId) {
+        ArrayList<String> recipients = new ArrayList<>();
+        Uri addrUri = Uri.parse("content://mms/" + mmsId + "/addr");
+        ContentResolver resolver = context.getContentResolver();
+        Cursor cursor = resolver.query(addrUri,
+                new String[]{"address", "type"},
+                "type = " + MMS_ADDR_TYPE_TO,
+                null, null);
+
+        if (cursor == null) return recipients;
+
+        try {
+            while (cursor.moveToNext()) {
+                String addr = cursor.getString(cursor.getColumnIndexOrThrow("address"));
+                if (addr != null && !addr.isEmpty()) {
+                    recipients.add(addr);
+                }
+            }
+        } finally {
+            cursor.close();
+        }
+        return recipients;
+    }
+
+    private boolean isOwnNumber(String number) {
+        try {
+            android.telephony.TelephonyManager tm =
+                    (android.telephony.TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+            if (tm != null) {
+                String ownNumber = tm.getLine1Number();
+                if (ownNumber != null && !ownNumber.isEmpty()) {
+                    String norm1 = number.replaceAll("[^\\d+]", "");
+                    String norm2 = ownNumber.replaceAll("[^\\d+]", "");
+                    return norm1.endsWith(norm2) || norm2.endsWith(norm1);
+                }
+            }
+        } catch (SecurityException ignored) {}
+        // Also filter the generic "insert-address-token" placeholder Android uses
+        return "insert-address-token".equals(number);
+    }
+
+    private String formatGroupName(String sender, String senderName, ArrayList<String> recipients) {
+        if (recipients.isEmpty()) {
+            return senderName;
+        }
+
+        StringBuilder group = new StringBuilder();
+        group.append(senderName).append(" - ").append(senderName);
+
+        for (String recip : recipients) {
+            if (isOwnNumber(recip)) continue;
+            String recipName = getContactNameByPhoneNumber(recip, context);
+            group.append(", ").append(recipName);
+        }
+
+        return group.toString();
+    }
+
     private ArrayList<MmsPart> getMmsParts(long mmsId) {
         ArrayList<MmsPart> parts = new ArrayList<>();
         Uri partUri = Uri.parse("content://mms/" + mmsId + "/part");
@@ -236,7 +297,7 @@ public class MmsBroadcastReceiver extends ContentObserver {
                 part.contentType = cursor.getString(cursor.getColumnIndex("ct"));
                 part.text = cursor.getString(cursor.getColumnIndex("text"));
 
-                if (part.contentType != null && !part.contentType.startsWith("text/")) {
+                if (part.contentType != null && !part.contentType.equals("text/plain")) {
                     part.data = readPartData(part.id);
                 }
 

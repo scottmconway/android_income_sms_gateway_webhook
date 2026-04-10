@@ -153,14 +153,14 @@ public class MmsBroadcastReceiver extends ContentObserver {
             if (attachments.isEmpty()) {
                 WebhookMessage message = new WebhookMessage(
                         "Incoming MMS", sender, senderName, 0, "undetected",
-                        text, date, subject, "", "");
+                        text, date, subject, "", "", null);
                 dispatchToWebhooks(message);
             } else {
                 for (MmsPart attachment : attachments) {
                     String b64Data = Base64.encodeToString(attachment.data, Base64.NO_WRAP);
                     WebhookMessage message = new WebhookMessage(
                             "Incoming MMS", sender, senderName, 0, "undetected",
-                            text, date, subject, b64Data, attachment.contentType);
+                            text, date, subject, b64Data, attachment.contentType, attachment.data);
                     dispatchToWebhooks(message);
                 }
             }
@@ -187,7 +187,15 @@ public class MmsBroadcastReceiver extends ContentObserver {
                 continue;
             }
 
+            // 1. Send the normal templated text webhook
             callWebHook(config, message);
+
+            // 2. Send raw binary attachment if enabled and data is present
+            if (config.getAttachmentUploadEnabled()
+                    && message.mmsAttachmentData != null
+                    && message.mmsAttachmentData.length > 0) {
+                callBinaryWebHook(config, message);
+            }
         }
     }
 
@@ -306,6 +314,39 @@ public class MmsBroadcastReceiver extends ContentObserver {
                 }
             }
             Log.w(TAG, "Webhook delivery failed after " + maxRetries + " retries");
+        }).start();
+    }
+
+    private void callBinaryWebHook(ForwardingConfig config, WebhookMessage message) {
+        String preparedHeaders = config.prepareAttachmentHeaders(message);
+        int maxRetries = config.getRetriesNumber();
+
+        new Thread(() -> {
+            for (int attempt = 0; attempt <= maxRetries; attempt++) {
+                BinaryRequest request = new BinaryRequest(
+                        config.getAttachmentUrl(),
+                        config.getAttachmentMethod(),
+                        message.mmsAttachmentData,
+                        message.mmsAttachmentType);
+                request.setJsonHeaders(preparedHeaders);
+                request.setIgnoreSsl(config.getIgnoreSsl());
+
+                String result = request.execute();
+                if (Objects.equals(result, BinaryRequest.RESULT_SUCCESS)) {
+                    Log.d(TAG, "Binary attachment uploaded successfully");
+                    return;
+                }
+                if (Objects.equals(result, BinaryRequest.RESULT_ERROR)) {
+                    Log.e(TAG, "Binary attachment upload failed permanently");
+                    return;
+                }
+                try {
+                    Thread.sleep((long) Math.pow(2, attempt) * 1000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+            Log.w(TAG, "Binary attachment delivery failed after " + maxRetries + " retries");
         }).start();
     }
 

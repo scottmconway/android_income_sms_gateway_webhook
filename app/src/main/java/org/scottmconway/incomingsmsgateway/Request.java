@@ -137,10 +137,9 @@ public class Request {
             writer.close();
             out.close();
 
-            new BufferedInputStream(this.connection.getInputStream());
-
-            char code = Integer.toString(this.connection.getResponseCode()).charAt(0);
-            if (!Character.toString(code).equals("2")) {
+            int responseCode = this.connection.getResponseCode();
+            if (responseCode / 100 != 2) {
+                Log.e("SmsGateway", "webhook failed: HTTP " + responseCode);
                 result = RESULT_RETRY;
             }
         } catch (NoSuchAlgorithmException e) {

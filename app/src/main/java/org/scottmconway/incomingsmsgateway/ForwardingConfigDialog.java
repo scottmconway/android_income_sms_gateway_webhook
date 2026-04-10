@@ -12,7 +12,9 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.Toast;
 
@@ -64,6 +66,8 @@ public class ForwardingConfigDialog {
         chunkedModeCheckbox.setChecked(true);
 
         prepareSimSelector(context, view, 0);
+        prepareAttachmentFields(view, false, "", "PUT",
+                ForwardingConfig.getDefaultAttachmentHeaders());
 
         builder.setView(view);
         builder.setPositiveButton(R.string.btn_add, null);
@@ -119,6 +123,10 @@ public class ForwardingConfigDialog {
 
         final CheckBox chunkedModeCheckbox = view.findViewById(R.id.input_chunked_mode);
         chunkedModeCheckbox.setChecked(config.getChunkedMode());
+
+        prepareAttachmentFields(view, config.getAttachmentUploadEnabled(),
+                config.getAttachmentUrl(), config.getAttachmentMethod(),
+                config.getAttachmentHeaders());
 
         builder.setView(view);
         builder.setPositiveButton(R.string.btn_save, null);
@@ -211,7 +219,70 @@ public class ForwardingConfigDialog {
         config.setIgnoreSsl(ignoreSsl);
         config.setChunkedMode(chunkedMode);
 
+        // Attachment upload fields
+        final CheckBox attachmentCheckbox = view.findViewById(R.id.input_attachment_upload_enabled);
+        boolean attachmentEnabled = attachmentCheckbox.isChecked();
+        config.setAttachmentUploadEnabled(attachmentEnabled);
+
+        if (attachmentEnabled) {
+            final EditText attachmentUrlInput = view.findViewById(R.id.input_attachment_url);
+            String attachmentUrl = attachmentUrlInput.getText().toString();
+            if (TextUtils.isEmpty(attachmentUrl)) {
+                attachmentUrlInput.setError(context.getString(R.string.error_empty_attachment_url));
+                return null;
+            }
+            try {
+                new URL(attachmentUrl);
+            } catch (MalformedURLException e) {
+                attachmentUrlInput.setError(context.getString(R.string.error_wrong_attachment_url));
+                return null;
+            }
+            config.setAttachmentUrl(attachmentUrl);
+
+            Spinner methodSpinner = view.findViewById(R.id.input_attachment_method);
+            config.setAttachmentMethod((String) methodSpinner.getSelectedItem());
+
+            final EditText attachmentHeadersInput = view.findViewById(R.id.input_attachment_headers);
+            String attachmentHeaders = attachmentHeadersInput.getText().toString();
+            try {
+                new JSONObject(attachmentHeaders);
+            } catch (JSONException e) {
+                attachmentHeadersInput.setError(context.getString(R.string.error_wrong_json));
+                return null;
+            }
+            config.setAttachmentHeaders(attachmentHeaders);
+        }
+
         return config;
+    }
+
+    private void prepareAttachmentFields(View view, boolean enabled, String url,
+                                          String method, String headers) {
+        final CheckBox checkbox = view.findViewById(R.id.input_attachment_upload_enabled);
+        final LinearLayout container = view.findViewById(R.id.attachment_fields_container);
+
+        // Set up method spinner
+        Spinner methodSpinner = view.findViewById(R.id.input_attachment_method);
+        String[] methods = {"PUT", "POST"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(context,
+                android.R.layout.simple_spinner_item, methods);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        methodSpinner.setAdapter(adapter);
+        methodSpinner.setSelection("POST".equals(method) ? 1 : 0);
+
+        // Set up headers
+        final EditText headersInput = view.findViewById(R.id.input_attachment_headers);
+        headersInput.setText(headers);
+
+        // Set up URL
+        final EditText urlInput = view.findViewById(R.id.input_attachment_url);
+        urlInput.setText(url);
+
+        // Toggle visibility
+        checkbox.setChecked(enabled);
+        container.setVisibility(enabled ? View.VISIBLE : View.GONE);
+        checkbox.setOnCheckedChangeListener((buttonView, isChecked) ->
+                container.setVisibility(isChecked ? View.VISIBLE : View.GONE));
     }
 
     private void prepareSimSelector(Context context, View view, int selected) {
@@ -244,15 +315,32 @@ public class ForwardingConfigDialog {
         }
     }
 
+    private static final byte[] TEST_PNG = {
+            (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x02, 0x00, 0x00, 0x00, (byte) 0x90, 0x77, 0x53,
+            (byte) 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
+            0x54, 0x78, (byte) 0x9c, 0x63, (byte) 0xf8, (byte) 0xcf,
+            (byte) 0xc0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00,
+            (byte) 0xc9, (byte) 0xfe, (byte) 0x92, (byte) 0xef,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+            (byte) 0xae, 0x42, 0x60, (byte) 0x82
+    };
+
     private void testConfig(ForwardingConfig config) {
         if (config == null) {
             return;
         }
 
         Thread thread = new Thread(() -> {
-            String payload = config.prepareMessage(new WebhookMessage("test message type",
+            String b64 = android.util.Base64.encodeToString(TEST_PNG, android.util.Base64.NO_WRAP);
+            WebhookMessage testMessage = new WebhookMessage("test message type",
                     "123456789", "contact name", 1, "sim1", "test message", System.currentTimeMillis(),
-                    "test mms subject", "dGVzdCBhdHRhY2htZW50", "image/jpeg"));
+                    "test mms subject", b64, "image/png", TEST_PNG);
+
+            // 1. Send the normal templated text webhook
+            String payload = config.prepareMessage(testMessage);
             Request request = new Request(config.getUrl(), payload);
             request.setJsonHeaders(config.getHeaders());
             request.setIgnoreSsl(config.getIgnoreSsl());
@@ -260,7 +348,27 @@ public class ForwardingConfigDialog {
 
             String result = request.execute();
             if (!Objects.equals(result, Request.RESULT_SUCCESS)) {
-                result = Request.RESULT_ERROR;
+                Intent in = new Intent(BROADCAST_KEY);
+                in.putExtra(BROADCAST_KEY, Request.RESULT_ERROR);
+                context.sendBroadcast(in);
+                return;
+            }
+
+            // 2. Send binary attachment if enabled
+            if (config.getAttachmentUploadEnabled()) {
+                String headers = config.prepareAttachmentHeaders(testMessage);
+                BinaryRequest binReq = new BinaryRequest(
+                        config.getAttachmentUrl(),
+                        config.getAttachmentMethod(),
+                        TEST_PNG,
+                        "image/png");
+                binReq.setJsonHeaders(headers);
+                binReq.setIgnoreSsl(config.getIgnoreSsl());
+
+                result = binReq.execute();
+                if (!Objects.equals(result, BinaryRequest.RESULT_SUCCESS)) {
+                    result = BinaryRequest.RESULT_ERROR;
+                }
             }
 
             Intent in = new Intent(BROADCAST_KEY);

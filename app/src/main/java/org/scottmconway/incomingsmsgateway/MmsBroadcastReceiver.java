@@ -48,16 +48,12 @@ public class MmsBroadcastReceiver extends ContentObserver {
     public void onChange(boolean selfChange) {
         super.onChange(selfChange);
 
-        boolean hasPerm = hasReadSmsPermission();
-        Log.d(TAG, "onChange: selfChange=" + selfChange + " hasPerm=" + hasPerm + " initialized=" + initialized + " lastMmsId=" + lastMmsId);
-
-        if (!hasPerm) {
+        if (!hasReadSmsPermission()) {
             return;
         }
         if (!initialized) {
             lastMmsId = getLatestMmsId();
             initialized = true;
-            Log.d(TAG, "Initialized lastMmsId=" + lastMmsId);
             return;
         }
         processNewMmsMessages();
@@ -69,7 +65,6 @@ public class MmsBroadcastReceiver extends ContentObserver {
     }
 
     private void processNewMmsMessages() {
-        Log.d(TAG, "processNewMmsMessages, lastMmsId=" + lastMmsId);
         ContentResolver resolver = context.getContentResolver();
         Cursor cursor = resolver.query(
                 MMS_CONTENT_URI,
@@ -85,20 +80,16 @@ public class MmsBroadcastReceiver extends ContentObserver {
         }
 
         try {
-            Log.d(TAG, "MMS query returned " + cursor.getCount() + " rows");
             while (cursor.moveToNext()) {
                 long mmsId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
                 int msgBox = cursor.getInt(cursor.getColumnIndex("msg_box"));
                 String subject = cursor.getString(cursor.getColumnIndex("sub"));
                 long date = cursor.getLong(cursor.getColumnIndex("date")) * 1000;
 
-                Log.d(TAG, "MMS id=" + mmsId + " msg_box=" + msgBox + " sub=" + subject);
-
                 lastMmsId = mmsId;
 
                 // msg_box=1 is inbox (received messages)
                 if (msgBox != 1) {
-                    Log.d(TAG, "Skipping MMS " + mmsId + " (msg_box=" + msgBox + ", not inbox)");
                     continue;
                 }
 
@@ -113,11 +104,9 @@ public class MmsBroadcastReceiver extends ContentObserver {
 
     private void processMmsWithRetry(long mmsId, String subject, long date, int attempt) {
         long delay = attempt == 0 ? 2000 : RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
-        Log.d(TAG, "processMmsWithRetry id=" + mmsId + " attempt=" + attempt + " delay=" + delay);
 
         new Handler(context.getMainLooper()).postDelayed(() -> {
             String sender = getMmsSender(mmsId);
-            Log.d(TAG, "MMS " + mmsId + " sender=" + sender);
             if (sender == null && attempt < MAX_READ_RETRIES) {
                 processMmsWithRetry(mmsId, subject, date, attempt + 1);
                 return;
@@ -128,7 +117,6 @@ public class MmsBroadcastReceiver extends ContentObserver {
             }
 
             ArrayList<MmsPart> parts = getMmsParts(mmsId);
-            Log.d(TAG, "MMS " + mmsId + " parts=" + parts.size());
             if (parts.isEmpty() && attempt < MAX_READ_RETRIES) {
                 processMmsWithRetry(mmsId, subject, date, attempt + 1);
                 return;
@@ -137,7 +125,6 @@ public class MmsBroadcastReceiver extends ContentObserver {
             StringBuilder textContent = new StringBuilder();
             ArrayList<MmsPart> attachments = new ArrayList<>();
             for (MmsPart part : parts) {
-                Log.d(TAG, "MMS " + mmsId + " part ct=" + part.contentType + " textLen=" + (part.text != null ? part.text.length() : 0) + " dataLen=" + (part.data != null ? part.data.length : 0));
                 if (part.contentType != null && part.contentType.equals("text/plain")) {
                     if (part.text != null) {
                         textContent.append(part.text);
@@ -151,7 +138,6 @@ public class MmsBroadcastReceiver extends ContentObserver {
             ArrayList<String> recipients = getMmsRecipients(mmsId);
             String displayName = formatGroupName(sender, senderName, recipients);
             String text = textContent.toString();
-            Log.d(TAG, "MMS " + mmsId + " text=" + text.length() + "chars, attachments=" + attachments.size() + " recipients=" + recipients.size() + " displayName=" + displayName);
 
             if (attachments.isEmpty()) {
                 WebhookMessage message = new WebhookMessage(
@@ -173,7 +159,6 @@ public class MmsBroadcastReceiver extends ContentObserver {
     private void dispatchToWebhooks(WebhookMessage message) {
         ArrayList<ForwardingConfig> configs = ForwardingConfig.getAll(context);
         String asterisk = context.getString(R.string.asterisk);
-        Log.d(TAG, "dispatchToWebhooks: " + configs.size() + " configs, sender=" + message.senderPhoneNumber + " type=" + message.messageType);
 
         for (ForwardingConfig config : configs) {
             if ((message.senderPhoneNumber == null ||
@@ -394,11 +379,9 @@ public class MmsBroadcastReceiver extends ContentObserver {
 
                 String result = request.execute();
                 if (Objects.equals(result, BinaryRequest.RESULT_SUCCESS)) {
-                    Log.d(TAG, "Binary attachment uploaded successfully");
                     return;
                 }
                 if (Objects.equals(result, BinaryRequest.RESULT_ERROR)) {
-                    Log.e(TAG, "Binary attachment upload failed permanently");
                     return;
                 }
                 try {

@@ -339,7 +339,7 @@ public class ForwardingConfigDialog {
                     "123456789", "contact name", 1, "sim1", "test message", System.currentTimeMillis(),
                     "test mms subject", b64, "image/png", TEST_PNG);
 
-            // 1. Send the normal templated text webhook
+            // send the normal templated text webhook
             String payload = config.prepareMessage(testMessage);
             Request request = new Request(config.getUrl(), payload);
             request.setJsonHeaders(config.getHeaders());
@@ -354,7 +354,7 @@ public class ForwardingConfigDialog {
                 return;
             }
 
-            // 2. Send binary attachment if enabled
+            // send binary attachment if enabled
             if (config.getAttachmentUploadEnabled()) {
                 String headers = config.prepareAttachmentHeaders(testMessage);
                 BinaryRequest binReq = new BinaryRequest(

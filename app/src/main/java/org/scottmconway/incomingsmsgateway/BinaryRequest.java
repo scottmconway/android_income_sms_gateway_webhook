@@ -8,7 +8,6 @@ import org.apache.http.conn.ssl.AllowAllHostnameVerifier;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -25,7 +24,7 @@ import org.scottmconway.incomingsmsgateway.SSLSocketFactory.TLSSocketFactory;
 
 /**
  * Sends raw binary data as the HTTP request body.
- * Used for MMS attachment uploads (e.g. to ntfy).
+ * Used for MMS attachment uploads
  */
 public class BinaryRequest {
 
@@ -61,8 +60,8 @@ public class BinaryRequest {
             return;
         }
 
-        // Don't set Content-Type — let the user's configured headers control it.
-        // ntfy and similar services expect application/octet-stream (the default)
+        // Don't set Content-Type - let the user's configured headers control it.
+        // ntfy and similar services expect application/octet-stream
         // rather than the attachment's MIME type.
 
         if (url.getUserInfo() != null) {
@@ -121,7 +120,7 @@ public class BinaryRequest {
             out.close();
 
             int responseCode = this.connection.getResponseCode();
-            if (responseCode / 100 != 2) {
+            if (responseCode >= 400) {
                 String responseBody = "";
                 try {
                     java.io.InputStream errStream = this.connection.getErrorStream();

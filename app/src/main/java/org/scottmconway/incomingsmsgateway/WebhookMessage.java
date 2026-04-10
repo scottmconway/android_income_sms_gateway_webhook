@@ -17,10 +17,6 @@ public class WebhookMessage {
         this(messageType, senderPhoneNumber, senderName, simSlotId, simSlotName, messageContent, timestamp, "", "", "", null);
     }
 
-    public WebhookMessage(String messageType, String senderPhoneNumber, String senderName, int simSlotId, String simSlotName, String messageContent, long timestamp, String mmsSubject, String mmsAttachmentB64, String mmsAttachmentType) {
-        this(messageType, senderPhoneNumber, senderName, simSlotId, simSlotName, messageContent, timestamp, mmsSubject, mmsAttachmentB64, mmsAttachmentType, null);
-    }
-
     public WebhookMessage(String messageType, String senderPhoneNumber, String senderName, int simSlotId, String simSlotName, String messageContent, long timestamp, String mmsSubject, String mmsAttachmentB64, String mmsAttachmentType, byte[] mmsAttachmentData) {
         this.messageType = messageType;
         this.senderName = senderName;

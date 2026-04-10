@@ -8,7 +8,6 @@ import org.apache.http.conn.ssl.AllowAllHostnameVerifier;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -138,7 +137,7 @@ public class Request {
             out.close();
 
             int responseCode = this.connection.getResponseCode();
-            if (responseCode / 100 != 2) {
+            if (responseCode >= 400) {
                 Log.e("SmsGateway", "webhook failed: HTTP " + responseCode);
                 result = RESULT_RETRY;
             }

@@ -342,7 +342,7 @@ public class ForwardingConfigDialog {
             // send the normal templated text webhook
             String payload = config.prepareMessage(testMessage);
             Request request = new Request(config.getUrl(), payload);
-            request.setJsonHeaders(config.getHeaders());
+            request.setJsonHeaders(config.prepareHeaders(testMessage));
             request.setIgnoreSsl(config.getIgnoreSsl());
             request.setUseChunkedMode(config.getChunkedMode());
 

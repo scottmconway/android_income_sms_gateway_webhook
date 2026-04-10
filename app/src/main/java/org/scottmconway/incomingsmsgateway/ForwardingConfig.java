@@ -299,8 +299,8 @@ public class ForwardingConfig {
         editor.commit();
     }
 
-    public String prepareMessage(WebhookMessage message) {
-        return this.getTemplate()
+    private String applyPlaceholders(String template, WebhookMessage message) {
+        return template
                 .replaceAll("%messageType%", message.messageType)
                 .replaceAll("%from%", message.senderPhoneNumber)
                 .replaceAll("%fromName%", message.senderName)
@@ -319,12 +319,16 @@ public class ForwardingConfig {
                         Matcher.quoteReplacement(message.getMmsFilename()));
     }
 
+    public String prepareMessage(WebhookMessage message) {
+        return applyPlaceholders(this.getTemplate(), message);
+    }
+
+    public String prepareHeaders(WebhookMessage message) {
+        return applyPlaceholders(this.getHeaders(), message);
+    }
+
     public String prepareAttachmentHeaders(WebhookMessage message) {
-        return this.getAttachmentHeaders()
-                .replaceAll("%mmsFilename%",
-                        Matcher.quoteReplacement(message.getMmsFilename()))
-                .replaceAll("%mmsAttachmentType%",
-                        Matcher.quoteReplacement(message.mmsAttachmentType));
+        return applyPlaceholders(this.getAttachmentHeaders(), message);
     }
 
     private static SharedPreferences getPreference(Context context) {

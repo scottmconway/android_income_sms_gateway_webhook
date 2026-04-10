@@ -56,6 +56,12 @@ public class ListAdapter extends ArrayAdapter<ForwardingConfig> {
 
         SwitchCompat switchSmsOnOff = row.findViewById(R.id.switch_sms_on_off);
         TextView switchSmsLabel = row.findViewById(R.id.text_sms_on_off);
+
+        // Clear listener before setting checked state to prevent the old
+        // listener (from a recycled view) from firing and toggling the
+        // wrong config.
+        switchSmsOnOff.setOnCheckedChangeListener(null);
+
         if (config.getIsSmsEnabled()) {
             switchSmsOnOff.setChecked(true);
             switchSmsLabel.setText(R.string.btn_on);

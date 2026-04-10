@@ -251,7 +251,8 @@ public class ForwardingConfigDialog {
 
         Thread thread = new Thread(() -> {
             String payload = config.prepareMessage(new WebhookMessage("test message type",
-                    "123456789", "contact name", 1, "sim1", "test message", System.currentTimeMillis()));
+                    "123456789", "contact name", 1, "sim1", "test message", System.currentTimeMillis(),
+                    "test mms subject", "dGVzdCBhdHRhY2htZW50", "image/jpeg"));
             Request request = new Request(config.getUrl(), payload);
             request.setJsonHeaders(config.getHeaders());
             request.setIgnoreSsl(config.getIgnoreSsl());

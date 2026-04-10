@@ -123,7 +123,7 @@ public class ForwardingConfig {
     }
 
     public static String getDefaultJsonTemplate() {
-        return "{\n  \"messageType\":\"%messageType%\",\n \"from\":\"%fromName%\",\n  \"text\":\"%text%\",\n  \"sentStamp\":%sentStamp%,\n  \"receivedStamp\":%receivedStamp%,\n  \"sim\":\"%sim%\"\n}";
+        return "{\n  \"messageType\":\"%messageType%\",\n \"from\":\"%fromName%\",\n  \"text\":\"%text%\",\n  \"sentStamp\":%sentStamp%,\n  \"receivedStamp\":%receivedStamp%,\n  \"sim\":\"%sim%\",\n  \"mmsSubject\":\"%mmsSubject%\",\n  \"mmsAttachment\":\"%mmsAttachment%\",\n  \"mmsAttachmentType\":\"%mmsAttachmentType%\"\n}";
     }
 
     public static String getDefaultJsonHeaders() {
@@ -244,7 +244,13 @@ public class ForwardingConfig {
                 .replaceAll("%receivedStamp%", String.valueOf(System.currentTimeMillis()))
                 .replaceAll("%sim%", message.simSlotName)
                 .replaceAll("%text%",
-                        Matcher.quoteReplacement(StringEscapeUtils.escapeJson(message.messageContent)));
+                        Matcher.quoteReplacement(StringEscapeUtils.escapeJson(message.messageContent)))
+                .replaceAll("%mmsSubject%",
+                        Matcher.quoteReplacement(StringEscapeUtils.escapeJson(message.mmsSubject)))
+                .replaceAll("%mmsAttachment%",
+                        Matcher.quoteReplacement(message.mmsAttachment))
+                .replaceAll("%mmsAttachmentType%",
+                        Matcher.quoteReplacement(message.mmsAttachmentType));
     }
 
     private static SharedPreferences getPreference(Context context) {

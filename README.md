@@ -1,15 +1,35 @@
-# Incoming SMS to URL forwarder
-This application provides a simple interface to send HTTP requests with information from incoming SMS messages and calls.
+# Incoming SMS/MMS to URL forwarder
+This application provides a simple interface to send HTTP requests with information from incoming SMS/MMS messages and calls.
 
 ## Available Placeholders
-* %from%
-* %fromName%
-* %text%
-* %messageType%
-* %sentStamp%
-* %receivedStamp%
-* %sim%
+* %from% - sender phone number
+* %fromName% - sender contact name (or phone number if not in contacts)
+* %text% - message body (SMS or MMS text content)
+* %messageType% - message type ("Incoming SMS", "Incoming MMS", "Incoming Call")
+* %sentStamp% - sent timestamp
+* %receivedStamp% - received timestamp
+* %sim% - SIM slot name
+* %mmsSubject% - MMS subject line (if present)
+* %mmsAttachmentB64% - MMS attachment as base64-encoded string
+* %mmsAttachmentType% - MMS attachment MIME type (eg. "image/jpeg")
+* %mmsFilename% - derived filename from MIME type (eg. "attachment.jpg")
 
+Placeholders may be used in the request's JSON body or headers.
+
+### MMS Attachment Upload
+For MMS messages with binary attachments (images, videos, contact cards, etc.), the app can optionally send a second HTTP request with the raw attachment data as the request body.
+
+The attachment upload has its own configuration:
+* URL - defaults to the webhook URL if not set
+* Method - PUT or POST
+* Headers
+
+### Group MMS
+For group MMS messages, `%fromName%` is formatted as:
+```
+Sender - Sender, Recipient1, Recipient2, ...
+```
+Your own number is excluded from the recipient list.
 
 ## Request Info
 HTTP method: POST  

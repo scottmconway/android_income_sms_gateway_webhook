@@ -9,14 +9,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedOutputStream;
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Iterator;
@@ -25,21 +22,25 @@ import javax.net.ssl.HttpsURLConnection;
 
 import org.scottmconway.incomingsmsgateway.SSLSocketFactory.TLSSocketFactory;
 
-public class Request {
+/**
+ * Sends raw binary data as the HTTP request body.
+ * Used for MMS attachment uploads
+ */
+public class BinaryRequest {
 
-    private final String payload;
+    private final byte[] data;
+    private final String contentType;
     private boolean ignoreSsl = false;
-    private boolean useChunkedMode = true;
     private String error = null;
-
     private HttpURLConnection connection;
 
     public static final String RESULT_SUCCESS = "success";
     public static final String RESULT_ERROR = "error";
     public static final String RESULT_RETRY = "error_retry";
 
-    public Request(String urlString, String payload) {
-        this.payload = payload;
+    public BinaryRequest(String urlString, String method, byte[] data, String contentType) {
+        this.data = data;
+        this.contentType = contentType;
 
         URL url;
         try {
@@ -52,16 +53,17 @@ public class Request {
 
         try {
             this.connection = (HttpURLConnection) url.openConnection();
+            this.connection.setRequestMethod(method);
         } catch (IOException e) {
             Log.e("SmsGateway", "open connection error: " + e);
             this.error = RESULT_ERROR;
             return;
         }
 
-        this.connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        // Don't set Content-Type - let the user's configured headers control it.
+        // ntfy and similar services expect application/octet-stream
+        // rather than the attachment's MIME type.
 
-        // auto-generate HTTP Basic Authorization header
-        // this can be overriden by an Authorization header in the user's config
         if (url.getUserInfo() != null) {
             String basicAuth = "Basic " + Base64.encodeToString(url.getUserInfo().getBytes(), 0);
             this.connection.setRequestProperty("Authorization", basicAuth);
@@ -79,7 +81,6 @@ public class Request {
                     Log.e("SmsGateway", "only string supported in json");
                     continue;
                 }
-
                 this.connection.setRequestProperty(key, (String) headersObj.get(key));
             }
         } catch (JSONException e) {
@@ -90,10 +91,6 @@ public class Request {
 
     public void setIgnoreSsl(boolean ignoreSsl) {
         this.ignoreSsl = ignoreSsl;
-    }
-
-    public void setUseChunkedMode(boolean useChunkedMode) {
-        this.useChunkedMode = useChunkedMode;
     }
 
     @SuppressLint({"AllowAllHostnameVerifier"})
@@ -109,36 +106,41 @@ public class Request {
                 ((HttpsURLConnection) this.connection).setSSLSocketFactory(
                         new TLSSocketFactory(this.ignoreSsl)
                 );
-
                 if (this.ignoreSsl) {
                     ((HttpsURLConnection) this.connection).setHostnameVerifier(new AllowAllHostnameVerifier());
                 }
             }
 
             this.connection.setDoOutput(true);
-            if (this.useChunkedMode) {
-                this.connection.setChunkedStreamingMode(0);
-            } else {
-                this.connection.setFixedLengthStreamingMode(this.payload.length());
-            }
+            this.connection.setFixedLengthStreamingMode(this.data.length);
 
             OutputStream out = new BufferedOutputStream(this.connection.getOutputStream());
-
-            BufferedWriter writer;
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
-                writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
-            } else {
-                writer = new BufferedWriter(new OutputStreamWriter(out));
-            }
-
-            writer.write(this.payload);
-            writer.flush();
-            writer.close();
+            out.write(this.data);
+            out.flush();
             out.close();
 
             int responseCode = this.connection.getResponseCode();
             if (responseCode >= 400) {
-                Log.e("SmsGateway", "webhook failed: HTTP " + responseCode);
+                String responseBody = "";
+                try {
+                    java.io.InputStream errStream = this.connection.getErrorStream();
+                    if (errStream != null) {
+                        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            sb.append(line).append("\n");
+                        }
+                        reader.close();
+                        responseBody = sb.toString();
+                    }
+                } catch (IOException ignored) {}
+                Log.e("SmsGateway", "binary upload failed: HTTP " + responseCode
+                        + " url=" + this.connection.getURL()
+                        + " method=" + this.connection.getRequestMethod()
+                        + " contentType=" + this.contentType
+                        + " dataLen=" + this.data.length
+                        + " response: " + responseBody);
                 result = RESULT_RETRY;
             }
         } catch (NoSuchAlgorithmException e) {

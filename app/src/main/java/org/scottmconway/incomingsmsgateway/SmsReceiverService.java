@@ -7,7 +7,10 @@ import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.ContentObserver;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
 import android.provider.Telephony;
 import android.telephony.TelephonyManager;
@@ -17,6 +20,7 @@ import androidx.annotation.Nullable;
 public class SmsReceiverService extends Service {
 
     BroadcastReceiver receiver;
+    ContentObserver mmsObserver;
 
     private static final String CHANNEL_ID = "SmsDefault";
 
@@ -39,6 +43,15 @@ public class SmsReceiverService extends Service {
         }
 
         registerReceiver(receiver, filter);
+
+        // Register MMS ContentObserver on both URIs since different Android
+        // implementations notify on different content URIs for incoming MMS
+        Handler handler = new Handler(getMainLooper());
+        mmsObserver = new MmsBroadcastReceiver(handler, getApplicationContext());
+        getContentResolver().registerContentObserver(
+                Uri.parse("content://mms"), true, mmsObserver);
+        getContentResolver().registerContentObserver(
+                Uri.parse("content://mms-sms"), true, mmsObserver);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
@@ -66,6 +79,7 @@ public class SmsReceiverService extends Service {
         super.onDestroy();
 
         unregisterReceiver(receiver);
+        getContentResolver().unregisterContentObserver(mmsObserver);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             stopForeground(true);

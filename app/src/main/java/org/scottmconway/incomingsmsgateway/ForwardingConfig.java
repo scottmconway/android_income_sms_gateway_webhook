@@ -26,6 +26,10 @@ public class ForwardingConfig {
     private static final String KEY_IGNORE_SSL = "ignore_ssl";
     private static final String KEY_CHUNKED_MODE = "chunked_mode";
     private static final String KEY_IS_SMS_ENABLED = "is_sms_enabled";
+    private static final String KEY_ATTACHMENT_UPLOAD_ENABLED = "attachment_upload_enabled";
+    private static final String KEY_ATTACHMENT_URL = "attachment_url";
+    private static final String KEY_ATTACHMENT_METHOD = "attachment_method";
+    private static final String KEY_ATTACHMENT_HEADERS = "attachment_headers";
 
     private String key;
     private String sender;
@@ -37,6 +41,10 @@ public class ForwardingConfig {
     private boolean ignoreSsl = false;
     private boolean chunkedMode = true;
     private boolean isSmsEnabled = true;
+    private boolean attachmentUploadEnabled = false;
+    private String attachmentUrl = "";
+    private String attachmentMethod = "PUT";
+    private String attachmentHeaders = getDefaultAttachmentHeaders();
 
     public ForwardingConfig(Context context) {
         this.context = context;
@@ -122,12 +130,51 @@ public class ForwardingConfig {
         this.isSmsEnabled = isSmsEnabled;
     }
 
+    public boolean getAttachmentUploadEnabled() {
+        return this.attachmentUploadEnabled;
+    }
+
+    public void setAttachmentUploadEnabled(boolean attachmentUploadEnabled) {
+        this.attachmentUploadEnabled = attachmentUploadEnabled;
+    }
+
+    public String getAttachmentUrl() {
+        if (this.attachmentUrl == null || this.attachmentUrl.isEmpty()) {
+            return this.url;
+        }
+        return this.attachmentUrl;
+    }
+
+    public void setAttachmentUrl(String attachmentUrl) {
+        this.attachmentUrl = attachmentUrl;
+    }
+
+    public String getAttachmentMethod() {
+        return this.attachmentMethod;
+    }
+
+    public void setAttachmentMethod(String attachmentMethod) {
+        this.attachmentMethod = attachmentMethod;
+    }
+
+    public String getAttachmentHeaders() {
+        return this.attachmentHeaders;
+    }
+
+    public void setAttachmentHeaders(String attachmentHeaders) {
+        this.attachmentHeaders = attachmentHeaders;
+    }
+
     public static String getDefaultJsonTemplate() {
-        return "{\n  \"messageType\":\"%messageType%\",\n \"from\":\"%fromName%\",\n  \"text\":\"%text%\",\n  \"sentStamp\":%sentStamp%,\n  \"receivedStamp\":%receivedStamp%,\n  \"sim\":\"%sim%\"\n}";
+        return "{\n  \"messageType\":\"%messageType%\",\n \"from\":\"%fromName%\",\n  \"text\":\"%text%\",\n  \"sentStamp\":%sentStamp%,\n  \"receivedStamp\":%receivedStamp%,\n  \"sim\":\"%sim%\",\n  \"mmsSubject\":\"%mmsSubject%\",\n  \"mmsAttachmentType\":\"%mmsAttachmentType%\"\n}";
     }
 
     public static String getDefaultJsonHeaders() {
         return "{\"User-agent\":\"SMS Forwarder App\"}";
+    }
+
+    public static String getDefaultAttachmentHeaders() {
+        return "{\"Filename\":\"%mmsFilename%\"}";
     }
 
     public static int getDefaultRetriesNumber() {
@@ -151,6 +198,10 @@ public class ForwardingConfig {
             json.put(KEY_IGNORE_SSL, this.ignoreSsl);
             json.put(KEY_CHUNKED_MODE, this.chunkedMode);
             json.put(KEY_IS_SMS_ENABLED, this.isSmsEnabled);
+            json.put(KEY_ATTACHMENT_UPLOAD_ENABLED, this.attachmentUploadEnabled);
+            json.put(KEY_ATTACHMENT_URL, this.attachmentUrl);
+            json.put(KEY_ATTACHMENT_METHOD, this.attachmentMethod);
+            json.put(KEY_ATTACHMENT_HEADERS, this.attachmentHeaders);
 
             SharedPreferences.Editor editor = getEditor(context);
             editor.putString(this.getKey(), json.toString());
@@ -214,6 +265,19 @@ public class ForwardingConfig {
                         config.setChunkedMode(json.getBoolean(KEY_CHUNKED_MODE));
                     } catch (JSONException ignored) {
                     }
+
+                    if (json.has(KEY_ATTACHMENT_UPLOAD_ENABLED)) {
+                        config.setAttachmentUploadEnabled(json.getBoolean(KEY_ATTACHMENT_UPLOAD_ENABLED));
+                    }
+                    if (json.has(KEY_ATTACHMENT_URL)) {
+                        config.setAttachmentUrl(json.getString(KEY_ATTACHMENT_URL));
+                    }
+                    if (json.has(KEY_ATTACHMENT_METHOD)) {
+                        config.setAttachmentMethod(json.getString(KEY_ATTACHMENT_METHOD));
+                    }
+                    if (json.has(KEY_ATTACHMENT_HEADERS)) {
+                        config.setAttachmentHeaders(json.getString(KEY_ATTACHMENT_HEADERS));
+                    }
                 } catch (JSONException e) {
                     Log.e("ForwardingConfig", e.getMessage());
                 }
@@ -235,8 +299,8 @@ public class ForwardingConfig {
         editor.commit();
     }
 
-    public String prepareMessage(WebhookMessage message) {
-        return this.getTemplate()
+    private String applyPlaceholders(String template, WebhookMessage message) {
+        return template
                 .replaceAll("%messageType%", message.messageType)
                 .replaceAll("%from%", message.senderPhoneNumber)
                 .replaceAll("%fromName%", message.senderName)
@@ -244,7 +308,27 @@ public class ForwardingConfig {
                 .replaceAll("%receivedStamp%", String.valueOf(System.currentTimeMillis()))
                 .replaceAll("%sim%", message.simSlotName)
                 .replaceAll("%text%",
-                        Matcher.quoteReplacement(StringEscapeUtils.escapeJson(message.messageContent)));
+                        Matcher.quoteReplacement(StringEscapeUtils.escapeJson(message.messageContent)))
+                .replaceAll("%mmsSubject%",
+                        Matcher.quoteReplacement(StringEscapeUtils.escapeJson(message.mmsSubject)))
+                .replaceAll("%mmsAttachmentB64%",
+                        Matcher.quoteReplacement(message.mmsAttachmentB64))
+                .replaceAll("%mmsAttachmentType%",
+                        Matcher.quoteReplacement(message.mmsAttachmentType))
+                .replaceAll("%mmsFilename%",
+                        Matcher.quoteReplacement(message.getMmsFilename()));
+    }
+
+    public String prepareMessage(WebhookMessage message) {
+        return applyPlaceholders(this.getTemplate(), message);
+    }
+
+    public String prepareHeaders(WebhookMessage message) {
+        return applyPlaceholders(this.getHeaders(), message);
+    }
+
+    public String prepareAttachmentHeaders(WebhookMessage message) {
+        return applyPlaceholders(this.getAttachmentHeaders(), message);
     }
 
     private static SharedPreferences getPreference(Context context) {
